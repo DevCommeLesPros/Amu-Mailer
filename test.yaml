@@ -1,0 +1,23 @@
+user: seegers.t
+from: thierry.seegers@univ-amu.fr
+subject: "[Test] Ceci est un test"
+header: |+
+  Bonjour,
+footer: |+
+  Cordialement,
+  Thierry SEEGERS
+bcc: thierry.seegers@univ-amu.fr
+---
+to: [surfintheusa@yahoo.com, thierry.seegers@yahoo.com]
+body: |+
+  Ceci est un test envoyé à mes deux adresses @yahoo.com.
+
+  Il y a plusieurs lignes.
+---
+to: thierry.seegers@univ-amu.fr
+body: |+
+  Ceci est un test envoyé à mon unique adresse @univ-amu.fr.
+  Il y a une ligne vide après celle-ci.
+
+  Ceci est une ligne.
+  Suivi d'une autre.
