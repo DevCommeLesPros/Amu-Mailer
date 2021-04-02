@@ -30,6 +30,7 @@ try:
 
     # Load messages file.
     messages = list(yaml.safe_load_all(open(ARGS.messages, "r")))
+    total = len(messages) - 1
 
     configuration = messages[0]
 
@@ -37,7 +38,7 @@ try:
     from_ = ARGS.from_ or configuration['from']
     subject = configuration['subject']
     if from_ is None or subject is None:
-        raise('Fields "from" and "subject" are required. Specify them as program arguments or in the first document of "message')
+        raise('Fields "from" and "subject" are required. Specify them as program arguments or in the first document of ' + ARGS.messages)
 
     # Update SMTP paramter from default if specified.
     SMTP_HOST = SMTP_HOST or configuration['smtp_host']
@@ -49,13 +50,17 @@ try:
     # Prompt for password.
     mot_de_passe = getpass.getpass()
 
-    server = None
-    total = len(messages) - 1
-
     # Iterate over all messages.
-    for message in messages[1:]:
-
+    # If a message fails to be delivered, two more attempts will be made by re-connecting to the STMP server. Beyond that, we bail.
+    # If the case of AMU, there's a limit of 10 per connection so we do expect some failures (after 10 messages) but 
+    # severing and re-establishing a new connection fixes this (IMO, artificial) issue.
+    server = None
+    i = 1
+    attempts = 0
+    while i < len(messages):
         try:
+            attempts += 1
+
             # (Re-)connect to SMTP server if needed.
             if server is None:
                     # Instantiate server.
@@ -69,20 +74,22 @@ try:
                 if ARGS.verbose:
                     print('Logged in to SMTP server ' + SMTP_HOST)
 
+            message = messages[i]
+
             # Craft message.
             mime = MIMEText(configuration['header'] + '\n' + message['body'] + '\n' + configuration['footer'], 'plain', 'utf-8')
             mime['Subject'] = subject
             mime['From'] = from_
             mime['To'] = message['to'] if isinstance(message['to'], str) else ','.join(message['to'])
             if 'cc' in configuration :
-                mime['Cc'] = message['cc'] if isinstance(message['cc'], str) else ','.join(message['cc'])
+                mime['Cc'] = configuration['cc'] if isinstance(configuration['cc'], str) else ','.join(configuration['cc'])
             if 'bcc' in configuration :
-                mime['Bcc'] = message['bcc'] if isinstance(message['bcc'], str) else ','.join(message['bcc'])
+                mime['Bcc'] = configuration['bcc'] if isinstance(configuration['bcc'], str) else ','.join(configuration['bcc'])
 
             if ARGS.verbose:
                 print('New message:')
-                # mime.as_string()
-                # print(mime.as_string().encode())
+                print(mime.as_string())
+                print(mime.get_payload(decode=True).decode('utf-8'))
 
             # Send message.
             if not ARGS.dry_run:
@@ -98,18 +105,27 @@ try:
                     if ARGS.verbose:
                         print('Message successfully sent.')
 
+            i += 1
+            attempts = 0
         except smtplib.SMTPAuthenticationError as e:
             raise e
         except smtplib.SMTPResponseException as e:
-            if ARGS.verbose:
-                print("SMTP operation failed: [" + str(e.smtp_code) + "] " + str(e.smtp_error))
-            server.quit()
-            server = None
-
-    if ARGS.verbose:
-        print(str(sent) + '/' + str(total) + ' e-mails sent')
+            if attempts == 3:
+                raise e
+            else:
+                if ARGS.verbose:
+                    print("Retrying.")
+                server = None
 
 except smtplib.SMTPAuthenticationError as e:
     print("Authentication failed: [" + str(e.smtp_code) + "] " + str(e.smtp_error))
+except smtplib.SMTPResponseException as e:
+    print("SMTP operation failed: [" + str(e.smtp_code) + "] " + str(e.smtp_error))
 except RuntimeError as e:
     print(e.args)
+finally:
+    if server is not None:
+        server.quit()
+
+if ARGS.verbose:
+    print(str(sent) + '/' + str(total) + ' e-mails sent')
